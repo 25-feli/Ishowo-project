@@ -5,6 +5,346 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ISHOWO - Prospect Intelligence</title>
     <link rel="stylesheet" href="./style.css">
+    <style>
+        /* frontend/style.css */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f0f2f5;
+    padding: 20px;
+    color: #333;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* HEADER */
+header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px 30px;
+    border-radius: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+header h1 {
+    font-size: 28px;
+}
+
+header .subtitle {
+    opacity: 0.8;
+    font-size: 14px;
+}
+
+.header-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.header-actions button {
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: 0.3s;
+}
+
+.btn-refresh {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.btn-refresh:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.btn-export {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.btn-export:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* ACTIONS PANEL */
+.actions-panel {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+.actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+@media (max-width: 768px) {
+    .actions-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.action-card {
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+.action-card h3 {
+    margin-bottom: 10px;
+    color: #333;
+}
+
+.action-desc {
+    color: #777;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.action-form {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.action-form select,
+.action-form input {
+    padding: 8px 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+}
+
+.action-form select {
+    min-width: 160px;
+}
+
+.action-form input {
+    width: 80px;
+}
+
+.action-form button {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.3s;
+    color: white;
+}
+
+.action-form button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.action-form button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-primary {
+    background: #3498db;
+}
+
+.btn-danger {
+    background: #e74c3c;
+}
+
+.action-status {
+    margin-top: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: none;
+}
+
+.action-status.info {
+    display: block;
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.action-status.success {
+    display: block;
+    background: #d4edda;
+    color: #155724;
+}
+
+.action-status.error {
+    display: block;
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.action-status.processing {
+    display: block;
+    background: #fff3cd;
+    color: #856404;
+}
+
+/* STATS */
+.stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-box {
+    background: white;
+    padding: 15px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+.stat-box .number {
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.stat-box .number.blue { color: #3498db; }
+.stat-box .number.green { color: #27ae60; }
+.stat-box .number.orange { color: #f39c12; }
+.stat-box .number.purple { color: #9b59b6; }
+.stat-box .number.red { color: #e74c3c; }
+
+.stat-box .label {
+    color: #888;
+    font-size: 13px;
+    margin-top: 5px;
+}
+
+/* TABLE */
+.table-container {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+    overflow-x: auto;
+}
+
+.table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.table-header h2 {
+    font-size: 18px;
+    color: #555;
+}
+
+.badge-count {
+    background: #667eea;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+th {
+    background: #f8f9fa;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #555;
+    border-bottom: 2px solid #dee2e6;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+    vertical-align: middle;
+}
+
+tr:hover {
+    background: #f8f9fa;
+}
+
+.badge {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.badge-success { background: #d4edda; color: #155724; }
+.badge-danger { background: #f8d7da; color: #721c24; }
+.badge-warning { background: #fff3cd; color: #856404; }
+.badge-info { background: #d1ecf1; color: #0c5460; }
+.badge-commerce { background: #cce5ff; color: #004085; }
+.badge-pharmacy { background: #d4edda; color: #155724; }
+.badge-construction { background: #fdebd0; color: #a04000; }
+.badge-transport { background: #d5f5e3; color: #1a7a42; }
+.badge-restaurant { background: #fdebd0; color: #a04000; }
+.badge-service { background: #e8daef; color: #6c3483; }
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #999;
+}
+
+/* FOOTER */
+footer {
+    text-align: center;
+    margin-top: 20px;
+    color: #999;
+    font-size: 13px;
+}
+
+/* MOBILE */
+@media (max-width: 768px) {
+    .stats {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    .action-form {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .action-form select,
+    .action-form input {
+        width: 100%;
+    }
+}
+    </style>
 </head>
 <body>
     <div class="container">
@@ -118,5 +458,205 @@
     </div>
 
     <script src="./script.js"></script>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api';
+
+let allProspects = [];
+
+// ─── COLLECTE ──────────────────────────────────
+
+async function runCollect() {
+    const btn = document.getElementById('btnCollect');
+    const status = document.getElementById('collectStatus');
+    
+    const source = document.getElementById('sourceSelect').value;
+    const limit = document.getElementById('limitInput').value || 20;
+    
+    btn.disabled = true;
+    showStatus(status, 'processing', '🔄 Collecte en cours...');
+    
+    try {
+        const response = await fetch(`${API_URL}/collect?source=${source}&limit=${limit}&max_pages=10`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+        
+        if (data.status === 'success' || data.new_prospects !== undefined) {
+            showStatus(status, 'success', `✅ ${data.new_prospects || 0} nouveaux prospects collectés (${data.duplicates || 0} doublons)`);
+            refreshData();
+        } else {
+            showStatus(status, 'error', `❌ ${data.errors?.join(', ') || 'Erreur inconnue'}`);
+        }
+    } catch (error) {
+        showStatus(status, 'error', `❌ ${error.message}`);
+    }
+    btn.disabled = false;
+}
+
+// FULL PROCESSING 
+
+async function runFullProcessing() {
+    const btn = document.getElementById('btnFull');
+    const status = document.getElementById('fullStatus');
+    
+    btn.disabled = true;
+    showStatus(status, 'processing', '⚡ Traitement complet en cours... (Analyse IA + Vérification)');
+    
+    try {
+        const response = await fetch(`${API_URL}/process-full`, { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.status === 'processing') {
+            showStatus(status, 'success', `✅ Pipeline complet lancé ! ${data.total} prospects en cours de traitement`);
+            
+            // Rafraîchir toutes les 5 secondes
+            let count = 0;
+            const interval = setInterval(() => {
+                refreshData();
+                count++;
+                if (count > 12) clearInterval(interval);
+            }, 5000);
+            
+            setTimeout(() => refreshData(), 2000);
+        } else {
+            showStatus(status, 'info', `ℹ️ ${data.message || 'Aucun prospect à traiter'}`);
+        }
+    } catch (error) {
+        showStatus(status, 'error', `❌ ${error.message}`);
+    }
+    btn.disabled = false;
+}
+
+// CHARGEMENT 
+
+async function refreshData() {
+    await loadProspects();
+    await loadStats();
+}
+
+async function loadProspects() {
+    try {
+        const response = await fetch(`${API_URL}/prospects?limit=500`);
+        if (!response.ok) throw new Error('Erreur API');
+        const data = await response.json();
+        allProspects = data.prospects || [];
+        renderTable(allProspects);
+        document.getElementById('resultCount').textContent = `${allProspects.length} résultats`;
+    } catch (error) {
+        document.getElementById('prospectsBody').innerHTML =
+            `<tr><td colspan="9" style="color:red;">❌ Erreur: ${error.message}</td></tr>`;
+    }
+}
+
+async function loadStats() {
+    try {
+        const response = await fetch(`${API_URL}/stats`);
+        const stats = await response.json();
+        
+        document.getElementById('statTotal').textContent = stats.total_prospects || 0;
+        document.getElementById('statAnalyzed').textContent = stats.analyzed || 0;
+        document.getElementById('statVerified').textContent = stats.verified || 0;
+        document.getElementById('statHighScore').textContent = stats.high_score || 0;
+        
+        // Calculer joignables / non joignables
+        let joignables = 0, nonJoignables = 0;
+        allProspects.forEach(p => {
+            if (p.phone_verification?.valid === true) joignables++;
+            else if (p.phone_verification?.valid === false) nonJoignables++;
+        });
+        document.getElementById('statJoignables').textContent = joignables;
+        document.getElementById('statNonJoignables').textContent = nonJoignables;
+        
+    } catch (error) {
+        console.error('Erreur stats:', error);
+    }
+}
+
+// ─── TABLEAU ──────────────────────────────────
+
+function renderTable(prospects) {
+    const tbody = document.getElementById('prospectsBody');
+    
+    if (!prospects || prospects.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Aucun prospect trouvé</td></tr>';
+        return;
+    }
+
+    let html = '';
+    prospects.slice(0, 100).forEach(p => {
+        // Type badge
+        const typeMap = {
+            'commerce': 'badge-commerce',
+            'pharmacy': 'badge-pharmacy',
+            'restaurant': 'badge-restaurant',
+            'construction': 'badge-construction',
+            'transport': 'badge-transport',
+            'service': 'badge-service'
+        };
+        const typeClass = typeMap[p.analysis?.business_type] || '';
+        const typeLabel = p.analysis?.business_type?.toUpperCase() || '❓';
+        
+        // Stock badge
+        const stockNeed = p.analysis?.stock_management_need;
+        const stockBadge = stockNeed === true 
+            ? '<span class="badge badge-success">📦 Oui</span>'
+            : '<span class="badge badge-danger">📦 Non</span>';
+        
+        // Joignable badge
+        const verified = p.phone_verification?.valid;
+        let verifBadge = '<span class="badge badge-warning">⏳</span>';
+        if (verified === true) verifBadge = '<span class="badge badge-success">✅</span>';
+        else if (verified === false) verifBadge = '<span class="badge badge-danger">❌</span>';
+        
+        const score = p.analysis?.score || 0;
+        const justification = p.analysis?.justification || 'N/A';
+        
+        html += `
+            <tr>
+                <td>${p.id}</td>
+                <td><strong>${p.name || 'N/A'}</strong></td>
+                <td>${p.phone || 'N/A'}</td>
+                <td>${p.sector || 'N/A'}</td>
+                <td><span class="badge ${typeClass}">${typeLabel}</span></td>
+                <td><strong>${score}</strong></td>
+                <td>${stockBadge}</td>
+                <td>${verifBadge}</td>
+                <td><small>${justification.substring(0, 60)}${justification.length > 60 ? '...' : ''}</small></td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+// ─── EXPORTS ──────────────────────────────────
+
+function exportJSON() {
+    window.open(`${API_URL}/prospects/export/json`, '_blank');
+}
+
+function exportCSV() {
+    window.open(`${API_URL}/prospects/export/csv`, '_blank');
+}
+
+// ─── STATUS ──────────────────────────────────
+
+function showStatus(element, type, message) {
+    element.className = 'action-status ' + type;
+    element.textContent = message;
+    element.style.display = 'block';
+    
+    if (type === 'success' || type === 'error') {
+        setTimeout(() => { element.style.display = 'none'; }, 15000);
+    }
+}
+
+// ─── DÉMARRAGE ───────────────────────────────
+
+document.addEventListener('DOMContentLoaded', refreshData);
+
+// Auto-refresh toutes les 30 secondes
+setInterval(refreshData, 30000);
+    </script>
 </body>
 </html>
