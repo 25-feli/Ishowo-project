@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISHOWO - Prospect Intelligence</title>
+    <link rel="stylesheet" href="/frontend/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- HEADER -->
+        <header>
+            <div>
+                <h1>📊 ISHOWO - Prospect Intelligence</h1>
+                <p class="subtitle">Système de prospection intelligente</p>
+            </div>
+            <div class="header-actions">
+                <button onclick="refreshData()" class="btn-refresh">🔄 Actualiser</button>
+                <button onclick="exportJSON()" class="btn-export">📥 JSON</button>
+                <button onclick="exportCSV()" class="btn-export">📥 CSV</button>
+            </div>
+        </header>
+
+        <!-- ACTIONS -->
+        <div class="actions-panel">
+            <div class="actions-grid">
+                <!-- BOUTON COLLECTE -->
+                <div class="action-card">
+                    <h3>📥 Collecter des prospects</h3>
+                    <div class="action-form">
+                        <select id="sourceSelect">
+                            <option value="africa">🌍 Go Africa Online</option>
+                            <option value="showroom">🏢 Showroom Africa</option>
+                            <option value="all">🔀 Toutes les sources</option>
+                        </select>
+                        <input type="number" id="limitInput" value="20" min="1" max="500" placeholder="Nombre">
+                        <button onclick="runCollect()" id="btnCollect" class="btn-primary">
+                            🚀 Lancer la collecte
+                        </button>
+                    </div>
+                    <div id="collectStatus" class="action-status"></div>
+                </div>
+
+                <!-- BOUTON FULL PROCESSING -->
+                <div class="action-card">
+                    <h3>⚡ Full Processing</h3>
+                    <p class="action-desc">Analyse IA + Vérification téléphonique</p>
+                    <button onclick="runFullProcessing()" id="btnFull" class="btn-danger">
+                        🚀 Lancer le traitement complet
+                    </button>
+                    <div id="fullStatus" class="action-status"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STATISTIQUES -->
+        <div class="stats">
+            <div class="stat-box">
+                <div class="number blue" id="statTotal">0</div>
+                <div class="label">📋 Total</div>
+            </div>
+            <div class="stat-box">
+                <div class="number green" id="statAnalyzed">0</div>
+                <div class="label">🧠 Analysés</div>
+            </div>
+            <div class="stat-box">
+                <div class="number green" id="statVerified">0</div>
+                <div class="label">📞 Vérifiés</div>
+            </div>
+            <div class="stat-box">
+                <div class="number orange" id="statHighScore">0</div>
+                <div class="label">⭐ Score > 7</div>
+            </div>
+            <div class="stat-box">
+                <div class="number purple" id="statJoignables">0</div>
+                <div class="label">✅ Joignables</div>
+            </div>
+            <div class="stat-box">
+                <div class="number red" id="statNonJoignables">0</div>
+                <div class="label">❌ Non joignables</div>
+            </div>
+        </div>
+
+        <!-- TABLEAU -->
+        <div class="table-container">
+            <div class="table-header">
+                <h2>📋 Liste des prospects</h2>
+                <span class="badge-count" id="resultCount">0 résultats</span>
+            </div>
+            <div style="overflow-x: auto; max-height: 600px; overflow-y: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nom</th>
+                            <th>Téléphone</th>
+                            <th>Secteur</th>
+                            <th>Type</th>
+                            <th>Score</th>
+                            <th>📦 Stock</th>
+                            <th>📞 Joignable</th>
+                            <th>IA Justification</th>
+                        </tr>
+                    </thead>
+                    <tbody id="prospectsBody">
+                        <tr>
+                            <td colspan="9" class="loading">Chargement des prospects...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- FOOTER -->
+        <footer>
+            <p>ISHOWO - Prospect Intelligence &copy; 2026</p>
+        </footer>
+    </div>
+
+    <script src="/frontend/script.js"></script>
+</body>
+</html>
