@@ -1,37 +1,78 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
-class ProspectBase(BaseModel):
-    """Schéma de base pour les prospects """
-    name: str = Field(..., min_length=1, max_length=255)
-    sector: Optional[str] = Field(None, max_length=150)
-    city: Optional[str] = Field(None, max_length=100)
+# ============ SCHÉMAS EXISTANTS ============
+class ProspectCreate(BaseModel):
+    """Schéma pour la création d'un prospect"""
+    name: str
     phone: str
+    sector: Optional[str] = None
+    city: Optional[str] = None
     description: Optional[str] = None
-    source: Optional[str] = Field(None, max_length=100)
-    
-    @field_validator('phone')
-    def validate_phone(cls, v):
-        if not v or len(v.strip()) < 8:
-            raise ValueError('Numéro de téléphone invalide')
-        return v
+    source: str = "unknown"
 
-class ProspectCreate(ProspectBase):
-    """Schéma pour la création"""
-    pass
-
-class ProspectResponse(ProspectBase):
-    """Schéma de réponse"""
+class ProspectResponse(BaseModel):
+    """Schéma pour la réponse API"""
     id: int
-    business_type: Optional[str] = None
-    stock_management_need: bool = False
-    score: float = 0.0
-    ai_justification: Optional[str] = None
-    is_processed: bool = False
-    created_at: datetime
-    updated_at: datetime
-    user_id: Optional[int] = None
+    name: str
+    phone: str
+    sector: Optional[str]
+    city: Optional[str]
+    address: Optional[str]
+    business_type: Optional[str]
+    stock_management_need: bool
+    score: float
+    ai_justification: Optional[str]
+    source: Optional[str]
+    phone_validation: Optional[str]
     
     class Config:
         from_attributes = True
+
+# ============ NOUVEAUX SCHÉMAS ============
+class CollectResponse(BaseModel):
+    """Réponse pour la collecte de prospects"""
+    status: str = "success"
+    total_extracted: int
+    new_prospects: int
+    duplicates: int
+    errors: List[str] = []
+    details: List[str] = []
+
+class ProcessRequest(BaseModel):
+    """Requête pour le traitement IA"""
+    prospect_ids: Optional[List[int]] = None  
+
+class BatchProcessResponse(BaseModel):
+    """Réponse pour le traitement en lot"""
+    total_processed: int
+    success: int
+    failed: int
+    details: List[dict] = []
+    status: Optional[str] = None
+    message: Optional[str] = None
+
+class AnalyzeResponse(BaseModel):
+    """Réponse de l'analyse IA"""
+    business_type: str
+    stock_management_need: bool
+    score: float
+    justification: str
+
+class VerifyResponse(BaseModel):
+    """Réponse de la vérification téléphonique"""
+    prospect_id: int
+    prospect_name: str
+    phone: str
+    valid: bool
+    status: str
+    message: str
+    carrier: Optional[str] = None
+    checked_at: Optional[str] = None
+    status_text: str
+
+class ProspectsListResponse(BaseModel):
+    """Réponse liste des prospects"""
+    total: int
+    prospects: List[dict]

@@ -2,14 +2,38 @@ import re
 from typing import Dict, Any
 from app.schemas.prospects import ProspectCreate
 
+
+def extract_phone_from_text(text: str) -> str:
+    """
+    Extrait un numéro de téléphone d'un texte
+    """
+    if not text:
+        return ""
+    
+    patterns = [
+        r'(?:0|00229|\+229)\s*[1-9]\d{1}\s*\d{2}\s*\d{2}\s*\d{2}',
+        r'[1-9]\d{7}',
+        r'\d{2}\s*\d{2}\s*\d{2}\s*\d{2}'
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return normalize(match.group(0))
+    
+    return ""
+
 def normalize(phone: str) -> str:
     """
     Normalise les numéros de téléphone au format +229 01 XX XX XX XX
     (NOUVELLE RÉFORME BÉNINOISE: ajout automatique du préfixe 01)
-    
     """
     if not phone:
-        return ""
+        return "À déterminer"
+    
+    # Si le téléphone est déjà "À déterminer" ou similaire
+    if phone in ["À déterminer", "Non disponible", "Inconnu", "None"]:
+        return "À déterminer"
     
     # Nettoyer le numéro (garde uniquement les chiffres)
     cleaned = re.sub(r'[^\d]', '', phone)
@@ -23,9 +47,8 @@ def normalize(phone: str) -> str:
         cleaned = cleaned[-8:]  # Prendre les 8 derniers chiffres
     
     if len(cleaned) != 8:
-        raise ValueError(f"Numéro invalide: {phone} (8 chiffres requis après nettoyage)")
+        return "À déterminer"
     
-    # NOUVELLE RÉFORME: Ajouter "01" devant et formater
     # Format: +229 01 XX XX XX XX (10 chiffres après l'indicatif)
     formatted = f"+229 01 {cleaned[0:2]} {cleaned[2:4]} {cleaned[4:6]} {cleaned[6:8]}"
     
@@ -69,14 +92,20 @@ class DataNormaliseur:
         
         # Vérifier que le nom n'est pas vide
         if not item.name or len(item.name) < 2:
+            print(f"Validation échouée: nom trop court '{item.name}'")
+            return False
+    
+        # Si le téléphone est "À déterminer", on accepte quand même
+        if item.phone == "À déterminer":
+            print(f"Validation OK (sans téléphone): {item.name}")
+            return True
+        
+        # Vérifier que le téléphone est valide (avec le préfixe 01 !)
+        # Format: +229 01 XX XX XX XX
+        if not re.match(r'^\+229 01 \d{2} \d{2} \d{2} \d{2}$', item.phone):
+            print(f"Validation échouée: téléphone invalide '{item.phone}'")
             return False
         
-        # Vérifier que le téléphone est valide
-        if not re.match(r'^\+229 \d{2} \d{2} \d{2} \d{2}$', item.phone):
-            return False
-        
-        # Vérifier que la description n'est pas trop courte (si présente)
-        if item.description and len(item.description) < 10:
-            return False
-        
+        # Description OPTIONNELLE - on ne la vérifie plus
+        print(f"Validation OK: {item.name}")
         return True

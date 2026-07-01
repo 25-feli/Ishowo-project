@@ -1,5 +1,5 @@
-CREATE DATABASE ishowo_prospects;
-USE ishowo_prospects;
+CREATE DATABASE prospects;
+USE prospects;
 
 CREATE TABLE prospects (
     id INT PRIMARY KEY AUTO_INCREMENT,

@@ -23,7 +23,7 @@ engine = create_engine(
 # Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base pour les modèles
+# Base pour les modèles (EXPORTÉE pour être utilisée ailleurs)
 Base = declarative_base()
 
 # Dépendance pour obtenir une session DB
