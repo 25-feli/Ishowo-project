@@ -1,6 +1,33 @@
 function Header({ onRefresh }) {
-    const exportJSON = () => window.open('/api/prospects/export/json', '_blank');
-    const exportCSV = () => window.open('/api/prospects/export/csv', '_blank');
+    const exportJSON = async () => {
+        try {
+            const response = await fetch('/api/prospects/export/json');
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `prospects_${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+        } catch (error) {
+            console.error('Erreur export JSON:', error);
+            alert('Erreur lors de l\'export JSON');
+        }
+    };
+
+    const exportCSV = async () => {
+        try {
+            const response = await fetch('/api/prospects/export/csv');
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `prospects_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+        } catch (error) {
+            console.error('Erreur export CSV:', error);
+            alert('Erreur lors de l\'export CSV');
+        }
+    };
 
     return (
         <header className="header">

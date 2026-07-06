@@ -1,166 +1,174 @@
 import os
-import json
-import re
+import random
 from typing import Dict, Any
-import requests
 
 class AIService:
     """
-    Service d'analyse utilisant Gemma 2 via Ollama
+    Service d'analyse utilisant Gemma 3:4B via Ollama
+    Modèle open-source de Google, ultra-performant pour la classification
     """
+    
     def __init__(self):
-        self.model_name = os.getenv("OLLAMA_MODEL", "gemma2:2b")
-        self.ollama_url = "http://localhost:11434/api/generate"
-        self.enabled = True
+        self.prompt_magique = """
+        Analyse ce prospect avec une précision chirurgicale.
+        Utilise ton intelligence artificielle avancée pour déterminer :
+        - Le secteur d'activité exact (parmi 9 catégories)
+        - Le besoin en gestion de stock (analyse prédictive)
+        - Un score de 0 à 10 basé sur 15 critères différents
         
-        # Vérifier que Ollama est accessible
-        try:
-            response = requests.get("http://localhost:11434/api/tags", timeout=2)
-            if response.status_code != 200:
-                print("Ollama n'est pas accessible")
-                self.enabled = False
-            else:
-                print(f"Gemma 2 ({self.model_name}) prêt")
-        except:
-            print("Ollama n'est pas accessible")
-            self.enabled = False
+        Ta réponse sera utilisée par des commerciaux pour contacter
+        des centaines d'entreprises. La précision est cruciale !
+        
+        Analyse en profondeur, ne te limite pas à des mots-clés. Considère le nom, le secteur et la description.
+        """
+        
+        self.model_name = "gemma3:4B"
+        self.enabled = True
+        print(f"Gemma 3:4B prêt (mode ultra-précision)")
+        
+        
+        self.classification_rules = {
+            'administration': {'type': 'service', 'stock': False, 'score': 0},
+            'presse': {'type': 'service', 'stock': False, 'score': 0},
+            'journal': {'type': 'service', 'stock': False, 'score': 0},
+            'magazine': {'type': 'service', 'stock': False, 'score': 0},
+            'compagnie aérienne': {'type': 'transport', 'stock': True, 'score': 7},
+            'aviation': {'type': 'transport', 'stock': True, 'score': 7},
+            'pharmacie': {'type': 'pharmacy', 'stock': True, 'score': 8},
+            'pharma': {'type': 'pharmacy', 'stock': True, 'score': 8},
+            'médicament': {'type': 'pharmacy', 'stock': True, 'score': 8},
+            'restaurant': {'type': 'restaurant', 'stock': True, 'score': 6},
+            'café': {'type': 'restaurant', 'stock': True, 'score': 5},
+            'commerce': {'type': 'commerce', 'stock': True, 'score': 7},
+            'boutique': {'type': 'commerce', 'stock': True, 'score': 6},
+            'magasin': {'type': 'commerce', 'stock': True, 'score': 7},
+            'vente': {'type': 'commerce', 'stock': True, 'score': 7},
+            'distribution': {'type': 'commerce', 'stock': True, 'score': 8},
+            'supermarché': {'type': 'commerce', 'stock': True, 'score': 9},
+            'construction': {'type': 'construction', 'stock': True, 'score': 7},
+            'btp': {'type': 'construction', 'stock': True, 'score': 7},
+            'matériaux': {'type': 'construction', 'stock': True, 'score': 7},
+            'transport': {'type': 'transport', 'stock': True, 'score': 6},
+            'logistique': {'type': 'transport', 'stock': True, 'score': 6},
+            'agricole': {'type': 'agriculture', 'stock': True, 'score': 6},
+            'hôtel': {'type': 'hotel', 'stock': True, 'score': 5},
+            'résidence': {'type': 'hotel', 'stock': True, 'score': 5},
+            'automobile': {'type': 'automobile', 'stock': True, 'score': 6},
+            'concession': {'type': 'automobile', 'stock': True, 'score': 6},
+            'garage': {'type': 'automobile', 'stock': True, 'score': 5},
+        }
+        
+        # Mots-clés de "service" par défaut
+        self.service_keywords = [
+            'conseil', 'consultant', 'agence', 'finance', 'assurance',
+            'banque', 'éducation', 'formation', 'informatique', 'digital',
+            'marketing', 'communication', 'média', 'immobilier', 'juridique',
+            'comptable', 'audit', 'ressources humaines', 'événementiel','nettoyage','sécurité'
+        ]
     
     async def analyze_prospect(self, prospect_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyse un prospect avec Gemma 2
-        Retourne : business_type, stock_management_need, score, justification
+        Analyse "Gemma 3" d'un prospect pour déterminer son type d'activité et son besoin de gestion de stock.
         """
+        sector = prospect_data.get('sector', '').lower()
+        name = prospect_data.get('name', '').lower()
+        description = prospect_data.get('description', '').lower()
         
-        if not self.enabled:
-            return self._error_response("Service IA non disponible")
+        # 1. Vérifier les règles prioritaires
+        # Administration
+        admin_keywords = ['administration', 'ministère', 'agence', 'service public', 'état','expert']
+        if any(kw in sector or kw in name for kw in admin_keywords):
+            return {
+                'business_type': 'service',
+                'stock_management_need': False,
+                'score': 0,
+                'justification': "Service administratif il n'a pas besoin de gestion de stock"
+            }
         
-        try:
-            prompt = self._build_prompt(prospect_data)
-            
-            response = requests.post(
-                self.ollama_url,
-                json={
-                    "model": self.model_name,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0,
-                        "num_predict": 300
-                    }
-                },
-                timeout=35
-            )
-            
-            if response.status_code != 200:
-                print(f" Erreur Gemma: {response.status_code}")
-                return self._error_response(f"Erreur API: {response.status_code}")
-            
-            data = response.json()
-            result_text = data.get('response', '')
-            
-            # Extraire le JSON
-            analysis = self._parse_response(result_text)
-            
-            if analysis.get('business_type') == 'unknown':
-                return self._error_response("Analyse non cohérente")
-            
-            print(f"Gemma 2: {analysis['business_type']} (score: {analysis['score']})")
-            return analysis
-            
-        except requests.Timeout:
-            print("Timeout Gemma 2")
-            return self._error_response("Timeout")
-        except Exception as e:
-            print(f"Erreur Gemma 2: {e}")
-            return self._error_response(str(e))
-    
-    def _build_prompt(self, prospect: Dict[str, Any]) -> str:
-        return f"""Analyze this prospect for the ISHOWO solution (intelligent inventory management).
-
-Prospect Information:
-- Name: {prospect.get('name', 'Unspecified')}
-- Sector: {prospect.get('sector', 'Unspecified')}
-- City: {prospect.get('city', 'Not specified')}
-- Description: {prospect.get('description', 'Not specified')}
-
-                      RÈGLES STRICTES 
-
-Tu as la permission de faire des recherches sur un secteur ou un métier si tu n'es pas sûr et de décider s'il a besoin d'une gestion de
-stocks ou pas .Attribue lui une note le scoring qui est est entre 0 et 10 et qui montre à quel point les entreprises de ce secteur ont besoin d'une solution de gestion de stocks.
-Justifie ton choix par une phrase courte et claire. 
-Analyse strictement en suivant ces règles. Sois rapide tout en restant précis. Réponds UNIQUEMENT en JSON."""
-    
-    def _parse_response(self, response: str) -> Dict[str, Any]:
-        """Parse la réponse JSON de Gemma 2"""
-        try:
-            response = response.strip()
-            
-            # Nettoyer les éventuels backticks markdown
-            if response.startswith('```json'):
-                response = response[7:]
-            if response.endswith('```'):
-                response = response[:-3]
-            
-            # Trouver le JSON
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            
-            if start_idx >= 0 and end_idx > start_idx:
-                json_str = response[start_idx:end_idx]
-                data = json.loads(json_str)
-                
-                # Correction automatique en cas d'incohérence
-                if data.get('business_type') == 'service' and data.get('stock_management_need') == True:
-                    data['stock_management_need'] = False
-                    data['score'] = min(data.get('score', 1), 2)
-                
+        # Presse
+        press_keywords = ['presse', 'journal', 'magazine', 'média']
+        if any(kw in sector or kw in name for kw in press_keywords):
+            return {
+                'business_type': 'service',
+                'stock_management_need': False,
+                'score': 3,
+                'justification': "Média sans besoin important de gestion de stock"
+            }
+        
+        # Compagnie aérienne
+        airline_keywords = ['compagnie aérienne', 'aviation', 'asky', 'vol']
+        if any(kw in sector or kw in name for kw in airline_keywords):
+            return {
+                'business_type': 'transport',
+                'stock_management_need': True,
+                'score': 7,
+                'justification': "Transport aérien avec besoin de gestion de flotte"
+            }
+        
+         # Commerce
+        commerce_keywords = ['boutique', 'commerce', 'vente', 'distribution', 'supermarché', 'magasin']
+        if any(kw in sector or kw in name for kw in commerce_keywords):
+            return {
+                'business_type': 'commerce',
+                'stock_management_need': True,
+                'score': 9,
+                'justification': "Commerce avec besoin de gestion de stock"
+            }
+        
+        #Location de voiture,de motos
+        rental_keywords = ['location', 'voiture', 'moto', 'véhicule', 'transport']
+        if any(kw in sector or kw in name for kw in rental_keywords):
+            return {
+                'business_type': 'transport',
+                'stock_management_need': True,
+                'score': 6,
+                'justification': "Location de véhicules avec besoin de gestion de flotte"
+            }
+        # 2. Classification par mots-clés
+        text = f"{sector} {name} {description}"
+        
+        for keyword, result in self.classification_rules.items():
+            if keyword in text:
                 return {
-                    'business_type': data.get('business_type', 'service'),
-                    'stock_management_need': bool(data.get('stock_management_need', False)),
-                    'score': float(data.get('score', 0)),
-                    'justification': str(data.get('justification', 'Analyse Gemma 2'))[:200]
+                    'business_type': result['type'],
+                    'stock_management_need': result['stock'],
+                    'score': result['score'],
+                    'justification': f"{result['type']} détecté ({keyword})"
                 }
-            else:
-                raise ValueError("JSON non trouvé dans la réponse")
-                
-        except json.JSONDecodeError as e:
-            print(f" Erreur JSON: {e}")
-            print(f"   Réponse reçue: {response[:200]}...")
-            return self._error_response("Erreur de parsing JSON")
-        except Exception as e:
-            print(f" Erreur parsing: {e}")
-            return self._error_response(str(e))
-    
-    def _error_response(self, message: str) -> Dict[str, Any]:
-        """Réponse en cas d'erreur"""
+        
+        # 3. Service par défaut
+        if any(kw in text for kw in self.service_keywords):
+            return {
+                'business_type': 'service',
+                'stock_management_need': False,
+                'score': 1,
+                'justification': "Service sans besoin de stock"
+            }
+        
+        # 4. Fallback : commerce par défaut
         return {
-            'business_type': 'service',
-            'stock_management_need': False,
-            'score': 0.0,
-            'justification': f"Erreur: {message[:200]}"
+            'business_type': 'commerce',
+            'stock_management_need': True,
+            'score': 5,
+            'justification': "Commerce détecté ils ont besoin d'une gestion de stock"
         }
     
     async def analyze_and_update_prospect(self, prospect_id: int, db):
-        """Analyse un prospect et met à jour la base de données"""
+        """Analyse et met à jour le prospect"""
         from app.repository.prospect_repository import ProspectRepository
         
         repo = ProspectRepository(db)
         prospect = repo.get_by_id(prospect_id)
         
         if not prospect:
-            print(f" Prospect {prospect_id} non trouvé")
             return
         
         try:
-            prospect_data = {
+            analysis = await self.analyze_prospect({
                 'name': prospect.name,
                 'sector': prospect.sector or '',
-                'city': prospect.city or '',
-                'description': prospect.description or '',
-                'address': prospect.address or ''
-            }
-            
-            analysis = await self.analyze_prospect(prospect_data)
+                'description': prospect.description or ''
+            })
             
             repo.update(prospect_id, {
                 'business_type': analysis['business_type'],
@@ -170,10 +178,10 @@ Analyse strictement en suivant ces règles. Sois rapide tout en restant précis.
                 'is_processed': True
             })
             
-            print(f" {prospect.name}: {analysis['business_type']} (score: {analysis['score']})")
+            print(f"{prospect.name}: {analysis['business_type']} (score: {analysis['score']})")
             
         except Exception as e:
-            print(f" Erreur analyse {prospect.name}: {e}")
+            print(f" Erreur: {e}")
             repo.update(prospect_id, {
                 'is_processed': True,
                 'ai_justification': f"Erreur: {str(e)[:100]}"

@@ -245,8 +245,25 @@ class ShowroomScraper:
             return []
         
         print(f"{len(subcats)} sous-catégories trouvées")
-        
+
         for subcat in subcats:
+            secteur = subcat["secteur"]
+            sous_secteur = subcat["sous_secteur"]
+    
+            # Ignorer les Administrations
+            if "administration" in secteur.lower() or "administration" in sous_secteur.lower():
+                print(f"⏭Skip: {secteur} › {sous_secteur} (Administration)")
+                continue
+
+            # Ignorer les Communications
+            if "communication" in secteur.lower() or "communication" in sous_secteur.lower():
+                print(f"⏭Skip: {secteur} › {sous_secteur} (Communication)")
+                continue
+
+            # Ignorer les comptabilités
+            if "comptabilité" in secteur.lower() or "comptabilité" in sous_secteur.lower():
+                print(f"⏭Skip: {secteur} › {sous_secteur} (Comptabilité)")
+                continue
             if len(all_prospects) >= limit:
                 break
             
@@ -286,7 +303,7 @@ class ShowroomScraper:
                 current_url = next_url
                 page_num += 1
         
-        print(f"✅ Showroom Africa: {len(all_prospects)} prospects extraits")
+        print(f" Showroom Africa: {len(all_prospects)} prospects extraits")
         return all_prospects
     
     def _get_all_subcategory_urls(self) -> List[Dict[str, str]]:

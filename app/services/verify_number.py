@@ -1,147 +1,146 @@
 import os
+import uuid
 import requests
-import json
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+import json
 
 class PhoneVerifier:
     """
-    Vérification de numéros par APPEL UNIQUEMENT
-    Pas de simulation, tout passe par l'API OurVoice
+    Service de vérification OurVoice avec webhook
+
     """
     
     def __init__(self):
         self.api_key = os.getenv("OURVOICE_API_KEY")
-        self.base_url = os.getenv("OURVOICE_API_URL", "https://api.getourvoice.com/v1")
-        self.caller_id = os.getenv("OURVOICE_CALLER_ID", "+229")
+        self.api_url = os.getenv("OURVOICE_API_URL", "https://api.getourvoice.com")
+        self.caller_id = os.getenv("OURVOICE_CALLER_ID", "")
+        self.webhook_url = os.getenv("OURVOICE_WEBHOOK_URL", "https://ishowo-prospect.com/webhook/ourvoice")
+        self.pending_requests = {}
         
         if not self.api_key:
-            raise ValueError(" OURVOICE_API_KEY non définie dans .env")
+            print("OURVOICE_API_KEY non définie")
+    
+    def trigger_call(self, phone: str) -> Dict[str, Any]:
+        """
+        Lance un appel silencieux vers le numéro
+        """
+        cleaned_phone = self._clean_phone(phone)
+        request_id = str(uuid.uuid4())
         
-        self.headers = {
+        # Stocker la requête en attente
+        self.pending_requests[request_id] = {
+            "phone": cleaned_phone,
+            "status": "pending",
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        # Construire la requête OurVoice
+        payload = {
+            "from": self.caller_id,
+            "to": cleaned_phone,
+            "timeout": 3,
+            "play_audio": False,
+            "callback_url": f"{self.webhook_url}?request_id={request_id}"
+        }
+        
+        headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
         
-        print(f"   OurVoice configuré (PRODUCTION)")
-        print(f"   URL: {self.base_url}")
-        print(f"   Caller ID: {self.caller_id}")
-    
-    def verify(self, phone: str) -> Dict[str, Any]:
-        """Vérifie un numéro de téléphone par appel"""
-        cleaned_phone = self._clean_phone(phone)
-        
-        print(f"Appel vers {cleaned_phone}...")
-        
         try:
+            print(f"Lancement de l'appel vers {cleaned_phone}")
             response = requests.post(
-                f"{self.base_url}/calls",
-                headers=self.headers,
-                json={
-                    "to": cleaned_phone,
-                    "caller_id": self.caller_id,
-                    "timeout": 20,
-                    "silent": True,
-                    "max_attempts": 1
-                },
-                timeout=25
+                f"{self.api_url}/v1/calls",
+                json=payload,
+                headers=headers,
+                timeout=10
             )
             
-            # Afficher la réponse brute pour debug
-            print(f" Status Code: {response.status_code}")
-            print(f" Réponse: {response.text[:500]}")
-            
-            if response.status_code == 200:
+            if response.status_code in [200, 201]:
                 data = response.json()
-                call_status = data.get("status", "unknown")
-                
-                # Interprétation du statut
-                if call_status in ["answered", "ringing", "completed", "success"]:
-                    return {
-                        "valid": True,
-                        "status": "active",
-                        "message": "Numéro joignable",
-                        "carrier": data.get("carrier"),
-                        "call_id": data.get("call_id"),
-                        "raw_response": data,
-                        "checked_at": datetime.utcnow().isoformat()
-                    }
-                else:
-                    return {
-                        "valid": False,
-                        "status": call_status,
-                        "message": f"Numéro non joignable ({call_status})",
-                        "carrier": None,
-                        "call_id": data.get("call_id"),
-                        "raw_response": data,
-                        "checked_at": datetime.utcnow().isoformat()
-                    }
+                return {
+                    "success": True,
+                    "request_id": request_id,
+                    "message": "Appel lancé, en attente du résultat",
+                    "call_id": data.get("call_id"),
+                    "checked_at": datetime.utcnow().isoformat()
+                }
             else:
                 return {
-                    "valid": False,
-                    "status": "error",
-                    "message": f"Erreur HTTP {response.status_code}: {response.text[:200]}",
-                    "carrier": None,
-                    "raw_response": response.text,
-                    "checked_at": datetime.utcnow().isoformat()
+                    "success": False,
+                    "request_id": request_id,
+                    "message": f"Erreur OurVoice: {response.status_code}",
+                    "error": response.text
                 }
                 
         except requests.Timeout:
             return {
-                "valid": False,
-                "status": "timeout",
-                "message": "Délai d'attente dépassé (20s)",
-                "carrier": None,
-                "checked_at": datetime.utcnow().isoformat()
-            }
-        except requests.ConnectionError as e:
-            return {
-                "valid": False,
-                "status": "connection_error",
-                "message": f"Erreur de connexion: {str(e)}",
-                "carrier": None,
-                "checked_at": datetime.utcnow().isoformat()
+                "success": False,
+                "request_id": request_id,
+                "message": "Timeout OurVoice"
             }
         except Exception as e:
             return {
-                "valid": False,
-                "status": "error",
-                "message": f"Erreur: {str(e)}",
-                "carrier": None,
-                "checked_at": datetime.utcnow().isoformat()
+                "success": False,
+                "request_id": request_id,
+                "message": f"Erreur: {str(e)}"
             }
+    
+    def handle_webhook(self, request_id: str, call_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Traite le retour du webhook OurVoice
+        """
+        print(f"[Webhook] Reçu pour request_id: {request_id}")
+        
+        # Récupérer la requête en attente
+        pending = self.pending_requests.get(request_id)
+        if not pending:
+            return {"status": "error", "message": "Requête inconnue"}
+        
+        # Interpréter le statut
+        call_status = call_data.get("status", "unknown")
+        
+        # Statuts joignables
+        valid_statuses = ["ringing", "no-answer", "completed", "answered", "success"]
+        
+        is_valid = call_status in valid_statuses
+        
+        # Mettre à jour la requête
+        self.pending_requests[request_id]["status"] = "completed"
+        self.pending_requests[request_id]["result"] = {
+            "valid": is_valid,
+            "status": call_status,
+            "call_id": call_data.get("call_id"),
+            "duration": call_data.get("duration", 0),
+            "carrier": call_data.get("carrier"),
+            "checked_at": datetime.utcnow().isoformat()
+        }
+        
+        print(f"Résultat: {'JOIGNABLE' if is_valid else ' NON JOIGNABLE'}")
+        
+        return {
+            "status": "received",
+            "valid": is_valid,
+            "request_id": request_id,
+            "phone": pending.get("phone"),
+            "result": self.pending_requests[request_id]["result"]
+        }
+    
+    def get_request_status(self, request_id: str) -> Dict[str, Any]:
+        """
+        Vérifie le statut d'une requête
+        """
+        pending = self.pending_requests.get(request_id)
+        if not pending:
+            return {"status": "not_found"}
+        
+        return pending
     
     def _clean_phone(self, phone: str) -> str:
         """Nettoie le numéro pour l'API"""
         cleaned = phone.replace(" ", "")
-        cleaned = cleaned.replace("+22901", "+229")
+        if cleaned.startswith("+22901"):
+            cleaned = f"+229{cleaned[6:]}"
         return cleaned
-    
-    def verify_batch(self, phones: list) -> list:
-        """Vérifie plusieurs numéros en lot"""
-        results = []
-        for phone in phones:
-            result = self.verify(phone)
-            result["phone"] = phone
-            results.append(result)
-        return results
-    
-    def get_status_text(self, result: Dict[str, Any]) -> str:
-        """Retourne un texte lisible pour le statut"""
-        status = result.get("status", "unknown")
-        messages = {
-            "active": "Joignable",
-            "answered": "Joignable",
-            "ringing": "Joignable",
-            "completed": "Joignable",
-            "success": " Joignable",
-            "busy": "Occupé",
-            "no-answer": "Ne répond pas",
-            "failed": "Échec",
-            "rejected": "Rejeté",
-            "timeout": "Timeout",
-            "error": "Erreur",
-            "connection_error": "Connexion impossible",
-            "unknown": "Inconnu"
-        }
-        return messages.get(status, f" {status}")
