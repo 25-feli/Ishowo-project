@@ -15,7 +15,10 @@ function ProspectsTable({ prospects, loading }) {
     if (!prospects || prospects.length === 0) {
         return (
             <div className="table-container">
-                <div className="loading">Aucun prospect trouvé</div>
+                <div className="table-loading">
+                    <div className="spinner"></div>
+                    <span>Aucun prospect trouvé</span>
+                </div>
             </div>
         );
     }
