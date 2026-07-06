@@ -1,4 +1,3 @@
-// src/components/Actions.jsx
 import { useState } from 'react';
 
 function Actions({ onCollect, onFullProcessing }) {

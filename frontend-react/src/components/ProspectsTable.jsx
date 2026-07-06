@@ -1,8 +1,13 @@
+import Loader from './Loader';
+
 function ProspectsTable({ prospects, loading }) {
     if (loading) {
         return (
             <div className="table-container">
-                <div className="loading">Chargement des prospects...</div>
+                <div className="table-loading">
+                    <div className="spinner"></div>
+                    <span>Chargement des prospects...</span>
+                </div>
             </div>
         );
     }
@@ -14,7 +19,7 @@ function ProspectsTable({ prospects, loading }) {
             </div>
         );
     }
-
+    
     const typeMap = {
         'commerce': 'badge-commerce',
         'pharmacy': 'badge-pharmacy',

@@ -14,6 +14,12 @@ class SmsService:
         self.api_url = os.getenv("OURVOICE_API_URL", "https://api.getourvoice.com")
         self.sender = os.getenv("OURVOICE_SENDER", "IWAJU TECH")
         
+        # 🔥 MODE TEST : Activer pour les tests
+        self.test_mode = os.getenv("SMS_TEST_MODE", "true").lower() == "true"
+        
+        if self.test_mode:
+            print("🔬 MODE TEST SMS ACTIF - Aucun vrai SMS envoyé")
+
         if not self.api_key:
             print("OURVOICE_API_KEY non définie")
             self.enabled = False
@@ -35,6 +41,19 @@ class SmsService:
         Returns:
             Dict avec le statut de l'envoi
         """
+
+        if self.test_mode:
+            # 🔬 Simulation
+            print(f"🔬 [TEST] SMS envoyé à {phone}")
+            print(f"📝 Message: Découvrez ISHOWO sur https://ishowo.iwajutech.com")
+            return {
+                "valid": True,
+                "status": "active",
+                "message": "✅ SMS envoyé (MODE TEST)",
+                "carrier": "Simulé",
+                "checked_at": datetime.utcnow().isoformat()
+            }
+        
         if not self.enabled:
             return {
         "valid": True,
