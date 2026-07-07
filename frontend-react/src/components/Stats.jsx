@@ -1,6 +1,7 @@
 function Stats({ stats, prospects }) {
     const joignables = prospects?.filter(p => p.phone_verification?.valid === true).length || 0;
     const nonJoignables = prospects?.filter(p => p.phone_verification?.valid === false).length || 0;
+    const exploitable = prospects.filter(p => p.analysis?.score > 5 && p.phone_verification?.valid === true).length;
 
     return (
         <div className="stats">
@@ -17,8 +18,8 @@ function Stats({ stats, prospects }) {
                 <div className="label">📞 Vérifiés</div>
             </div>
             <div className="stat-box">
-                <div className="number orange">{stats.high_score || 0}</div>
-                <div className="label">⭐ Score {'>'} 7</div>
+                <div className="number orange">{exploitable}</div>
+                <div className="label">⭐Prospects exploitables</div>
             </div>
             <div className="stat-box">
                 <div className="number purple">{joignables}</div>

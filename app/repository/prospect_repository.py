@@ -1,7 +1,14 @@
+import json
+import os
+
+
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.models.prospects import Prospect
 from app.schemas.prospects import ProspectCreate
+from app.models.scraping_state import ScrapingState
+
+STATE_FILE = "scraping_state.json"
 
 class ProspectRepository:
     def __init__(self, db: Session):
@@ -56,7 +63,7 @@ class ProspectRepository:
     
     def get_all_unprocessed(self) -> List[Prospect]:
         return self.db.query(Prospect).filter(Prospect.is_processed == False).all()
-    
+
     def get_all_unverified(self) -> List[Prospect]:
         return self.db.query(Prospect).filter(Prospect.phone_validation.is_(None)).all()
     
@@ -75,6 +82,27 @@ class ProspectRepository:
                 return None
         return None
     
+
+    def get_last_page(self, source: str) -> int:
+        """Récupère la dernière page scrappée depuis un fichier JSON"""
+        try:
+            with open(STATE_FILE, "r") as f:
+                data = json.load(f)
+                return data.get(source, 1)
+        except:
+            return 1
+
+    def update_last_page(self, source: str, page: int):
+        """Met à jour la dernière page scrappée dans un fichier JSON"""
+        try:
+            with open(STATE_FILE, "r") as f:
+                data = json.load(f)
+        except:
+            data = {}
+        data[source] = page
+        with open(STATE_FILE, "w") as f:
+            json.dump(data, f)
+
     def get_stats(self) -> dict:
         from sqlalchemy import func
         

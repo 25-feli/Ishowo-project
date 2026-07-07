@@ -2,46 +2,47 @@ import os
 import uuid
 import requests
 from datetime import datetime
-from typing import Dict, Any, Optional
-import json
+from typing import Dict, Any
 
 class PhoneVerifier:
     """
-    Service de vérification OurVoice avec webhook
-
+    Service de vérification OurVoice avec webhook et message vocal
     """
-    
+
     def __init__(self):
         self.api_key = os.getenv("OURVOICE_API_KEY")
         self.api_url = os.getenv("OURVOICE_API_URL", "https://api.getourvoice.com")
-        self.caller_id = os.getenv("OURVOICE_CALLER_ID", "")
+        self.caller_id = os.getenv("OURVOICE_CALLER_ID", "2290166477424")
         self.webhook_url = os.getenv("OURVOICE_WEBHOOK_URL", "https://ishowo-prospect.com/webhook/ourvoice")
         self.pending_requests = {}
+        self.audio_url = os.getenv("OURVOICE_AUDIO_URL", "https://www.textavoice.com/tts-audio(1).mp3")
         
         if not self.api_key:
-            print("OURVOICE_API_KEY non définie")
+            print(" OURVOICE_API_KEY non définie")
     
     def trigger_call(self, phone: str) -> Dict[str, Any]:
         """
-        Lance un appel silencieux vers le numéro
+        Lance un appel vocal vers le numéro avec un message ISHOWO
         """
         cleaned_phone = self._clean_phone(phone)
         request_id = str(uuid.uuid4())
         
         # Stocker la requête en attente
         self.pending_requests[request_id] = {
-            "phone": cleaned_phone,
+            "phone": [cleaned_phone],
             "status": "pending",
             "created_at": datetime.utcnow().isoformat()
         }
         
-        # Construire la requête OurVoice
+        #  Payload pour l'appel avec message vocal
         payload = {
             "from": self.caller_id,
-            "to": cleaned_phone,
-            "timeout": 3,
-            "play_audio": False,
-            "callback_url": f"{self.webhook_url}?request_id={request_id}"
+            "to": [cleaned_phone],
+            "timeout": 15,
+            "play_audio": True,
+            "audio_url": self.audio_url, 
+            "callback_url": f"{self.webhook_url}?request_id={request_id}",
+            "max_attempts": 1
         }
         
         headers = {
@@ -50,7 +51,7 @@ class PhoneVerifier:
         }
         
         try:
-            print(f"Lancement de l'appel vers {cleaned_phone}")
+            print(f"Appel vocal vers {cleaned_phone}...")
             response = requests.post(
                 f"{self.api_url}/v1/calls",
                 json=payload,
@@ -63,7 +64,7 @@ class PhoneVerifier:
                 return {
                     "success": True,
                     "request_id": request_id,
-                    "message": "Appel lancé, en attente du résultat",
+                    "message": " Appel vocal lancé",
                     "call_id": data.get("call_id"),
                     "checked_at": datetime.utcnow().isoformat()
                 }
@@ -71,7 +72,7 @@ class PhoneVerifier:
                 return {
                     "success": False,
                     "request_id": request_id,
-                    "message": f"Erreur OurVoice: {response.status_code}",
+                    "message": f" Erreur OurVoice: {response.status_code}",
                     "error": response.text
                 }
                 
@@ -79,35 +80,31 @@ class PhoneVerifier:
             return {
                 "success": False,
                 "request_id": request_id,
-                "message": "Timeout OurVoice"
+                "message": "⏰ Timeout OurVoice"
             }
         except Exception as e:
             return {
                 "success": False,
                 "request_id": request_id,
-                "message": f"Erreur: {str(e)}"
+                "message": f"❌ Erreur: {str(e)}"
             }
     
     def handle_webhook(self, request_id: str, call_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Traite le retour du webhook OurVoice
         """
-        print(f"[Webhook] Reçu pour request_id: {request_id}")
+        print(f"📩 [Webhook] Reçu pour request_id: {request_id}")
         
-        # Récupérer la requête en attente
         pending = self.pending_requests.get(request_id)
         if not pending:
             return {"status": "error", "message": "Requête inconnue"}
         
-        # Interpréter le statut
         call_status = call_data.get("status", "unknown")
         
-        # Statuts joignables
+        # Statuts considérés comme "joignables"
         valid_statuses = ["ringing", "no-answer", "completed", "answered", "success"]
-        
         is_valid = call_status in valid_statuses
         
-        # Mettre à jour la requête
         self.pending_requests[request_id]["status"] = "completed"
         self.pending_requests[request_id]["result"] = {
             "valid": is_valid,
@@ -118,7 +115,7 @@ class PhoneVerifier:
             "checked_at": datetime.utcnow().isoformat()
         }
         
-        print(f"Résultat: {'JOIGNABLE' if is_valid else ' NON JOIGNABLE'}")
+        print(f"📊 Résultat: {' JOIGNABLE' if is_valid else ' NON JOIGNABLE'}")
         
         return {
             "status": "received",
@@ -129,18 +126,19 @@ class PhoneVerifier:
         }
     
     def get_request_status(self, request_id: str) -> Dict[str, Any]:
-        """
-        Vérifie le statut d'une requête
-        """
+        """Vérifie le statut d'une requête"""
         pending = self.pending_requests.get(request_id)
         if not pending:
             return {"status": "not_found"}
-        
         return pending
     
     def _clean_phone(self, phone: str) -> str:
-        """Nettoie le numéro pour l'API"""
+        """Nettoie le numéro pour l'API Ourvoice (format 22901XXXXXXXX)"""
+        # Enlever les espaces
         cleaned = phone.replace(" ", "")
-        if cleaned.startswith("+22901"):
-            cleaned = f"+229{cleaned[6:]}"
+        
+        # Enlever le +
+        if cleaned.startswith("+"):
+            cleaned = cleaned[1:]
+        
         return cleaned

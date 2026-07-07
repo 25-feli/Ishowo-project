@@ -6,15 +6,11 @@ import json
 import time
 from dotenv import load_dotenv
 from urllib.parse import urljoin
-from .normaliseur import extract_phone_from_text
 from typing import List, Dict, Any, Optional
-import requests
-
 
 load_dotenv()
 
-        
-# SCRAPER GO AFRICA
+# ==================== SCRAPER GO AFRICA ====================
 class AfricaOnlineScraper:
     """Scraper pour Go Africa Online avec pagination"""
     
@@ -26,29 +22,28 @@ class AfricaOnlineScraper:
             'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
         }
     
-    def search_businesses(self, limit: int = 20, max_pages: int = 100, **kwargs) -> List[Dict[str, Any]]:
+    def search_businesses(self, limit: int = 20, max_pages: int = 100, start_page: int = 1, **kwargs) -> List[Dict[str, Any]]:
         """
         Scrape les entreprises depuis Go Africa Online avec pagination
         
         Args:
             limit: Nombre maximum d'entreprises à scraper
-            max_pages: Nombre maximum de pages à parcourir (défaut: 5)
+            max_pages: Nombre maximum de pages à parcourir
+            start_page: Page de départ (pour la pagination intelligente)
         """
         all_prospects = []
-        page = 1
-        total_extracted = 0
+        page = start_page  # ← Correction : pas de virgule !
         
-        print(f"🔍 Scraping Go Africa Online (max {max_pages} pages)...")
+        print(f"🔍 Scraping Go Africa Online (max {max_pages} pages, depuis page {start_page})...")
         
         while len(all_prospects) < limit and page <= max_pages:
             try:
                 print(f"📄 Page {page}...")
                 
-                # Paramètres de la page
                 params = {
                     "type": "company",
                     "where": "country-BJ",
-                    "p": page  # ← Pagination
+                    "p": page
                 }
                 
                 response = requests.get(
@@ -60,38 +55,32 @@ class AfricaOnlineScraper:
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, 'html.parser')
                 
-                # Extraire les entreprises de la page
                 prospects_page = self._parse_page(soup)
                 
                 if not prospects_page:
-                    print(f"Plus d'entreprises à la page {page}")
+                    print(f"📭 Plus d'entreprises à la page {page}")
                     break
                 
-                # Ajouter les prospects
                 remaining = limit - len(all_prospects)
                 all_prospects.extend(prospects_page[:remaining])
                 
-                print(f" {len(prospects_page)} entreprises trouvées, total: {len(all_prospects)}")
+                print(f"   ✅ {len(prospects_page)} entreprises trouvées, total: {len(all_prospects)}")
                 
-                # Vérifier s'il y a une page suivante
                 if not self._has_next_page(soup):
-                    print(f" Plus de pages disponibles")
+                    print(f"📭 Plus de pages disponibles")
                     break
                 
                 page += 1
-                
-                # Petite pause pour éviter le rate limiting
                 time.sleep(0.5)
                 
             except Exception as e:
-                print(f"Erreur page {page}: {e}")
+                print(f"❌ Erreur page {page}: {e}")
                 break
         
-        print(f"Go Africa: {len(all_prospects)} prospects extraits sur {page} pages")
+        print(f"✅ Go Africa: {len(all_prospects)} prospects extraits sur {page - start_page} pages")
         return all_prospects
     
     def _parse_page(self, soup: BeautifulSoup) -> List[Dict[str, Any]]:
-        """Parse une page et extrait les entreprises"""
         prospects = []
         articles = soup.find_all('article', {'data-role': 'company'})
         
@@ -103,23 +92,20 @@ class AfricaOnlineScraper:
         return prospects
     
     def _parse_article(self, article) -> Dict[str, Any]:
-        """Parse un article d'entreprise"""
         try:
-            # Nom
+            from app.services.normaliseur import normalize
+            
             name_tag = article.find('a', class_='stretched-link')
             name = name_tag.get_text(strip=True) if name_tag else None
             
-            # Secteur
             sector_tag = article.find('div', class_='text-14 text-brand-blue mb-4')
             sector = sector_tag.get_text(strip=True) if sector_tag else None
             
-            # Adresse
             address = ""
             address_tag = article.find('address', class_='text-14 text-gray-700 flex-1')
             if address_tag:
                 address = re.sub(r'\s+', ' ', address_tag.get_text(strip=True))
             
-            # Ville
             city = "À déterminer"
             if address:
                 cities = ['Cotonou', 'Porto-Novo', 'Parakou', 'Abomey-Calavi', 'Ouidah', 'Bohicon', 'Abomey']
@@ -128,7 +114,6 @@ class AfricaOnlineScraper:
                         city = c
                         break
             
-            # Téléphone
             tel_tag = article.find('a', href=lambda href: href and href.startswith('tel:'))
             phone = None
             if tel_tag:
@@ -143,7 +128,6 @@ class AfricaOnlineScraper:
                 if len(phone) > 8:
                     phone = phone[-8:]
             
-            # Description
             description = ""
             desc_elem = article.find('div', class_='text-gray-700 text-14')
             if desc_elem:
@@ -151,13 +135,11 @@ class AfricaOnlineScraper:
                 if len(desc_text) > 20:
                     description = desc_text
             
-            # URL source
             source_url = None
             if name_tag and name_tag.get('href'):
                 source_url = f"https://www.goafricaonline.com{name_tag['href']}"
             
             if name and phone and len(phone) >= 8:
-                from app.services.normaliseur import normalize
                 normalized_phone = normalize(phone)
                 if normalized_phone and normalized_phone != "À déterminer":
                     return {
@@ -174,115 +156,87 @@ class AfricaOnlineScraper:
             return None
             
         except Exception as e:
-            print(f" Erreur parsing: {e}")
+            print(f"⚠️ Erreur parsing: {e}")
             return None
     
     def _has_next_page(self, soup: BeautifulSoup) -> bool:
-        """Vérifie s'il y a une page suivante"""
-        # Chercher le lien "Next" dans la pagination
         next_link = soup.find('a', {'rel': 'next'})
         if next_link:
             return True
         
-        # Alternative: chercher le dernier lien de pagination
         pagination = soup.find('ul', class_='pagination')
         if pagination:
-            # Vérifier si le dernier élément n'est pas "disabled"
             items = pagination.find_all('li')
             for item in items:
                 if item.get('class') and 'active' in item.get('class'):
-                    # La page active, vérifier s'il y a un "Next"
                     next_item = item.find_next_sibling('li')
                     if next_item and not next_item.get('class'):
                         return True
         
         return False
 
-#SCRAPER SHOWROOM AFRICA
 
+# ==================== SCRAPER SHOWROOM AFRICA ====================
 class ShowroomScraper:
-    """
-    Scraper pour Showroom Africa
-    Pays supportés : bj (Bénin), tg (Togo), ci (Côte d'Ivoire), sn (Sénégal), cm (Cameroun)
-    """
+    """Scraper pour Showroom Africa"""
     
     def __init__(self, country_code: str = "bj"):
         self.country_code = country_code
         self.base_url = f"https://www.showroomafrica.com/{country_code}"
         self.headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept-Language": "fr-FR,fr;q=0.9",
         }
         self.session = requests.Session()
         self.session.headers.update(self.headers)
     
-    def search_businesses(
-        self,
-        limit: int = 20,
-        max_pages: Optional[int] = None,
-        category: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    def search_businesses(self, limit: int = 20, start_page: int = 1, max_pages: Optional[int] = None, category: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Scrape les entreprises depuis Showroom Africa
         
         Args:
             limit: Nombre maximum d'entreprises
+            start_page: Page de départ (pour la pagination intelligente)
             max_pages: Nombre maximum de pages par sous-catégorie
-            category: Catégorie spécifique (ex: "restaurants", "hotels")
+            category: Catégorie spécifique
         """
         all_prospects = []
         
-        print(f"🔍 Scraping Showroom Africa ({self.country_code.upper()})")
+        print(f"🔍 Scraping Showroom Africa ({self.country_code.upper()}) depuis page {start_page}")
         
-        # Récupérer les catégories
         subcats = self._get_all_subcategory_urls()
         if not subcats:
-            print("Aucune catégorie trouvée")
+            print("❌ Aucune catégorie trouvée")
             return []
         
-        print(f"{len(subcats)} sous-catégories trouvées")
+        print(f"📊 {len(subcats)} sous-catégories trouvées")
 
         for subcat in subcats:
             secteur = subcat["secteur"]
             sous_secteur = subcat["sous_secteur"]
-    
-            # Ignorer les Administrations
-            if "administration" in secteur.lower() or "administration" in sous_secteur.lower():
-                print(f"⏭Skip: {secteur} › {sous_secteur} (Administration)")
+            
+            # Filtrer les catégories non pertinentes
+            excluded = ["administration", "communication", "comptabilité"]
+            if any(kw in secteur.lower() or kw in sous_secteur.lower() for kw in excluded):
+                print(f"⏭Skip: {secteur} › {sous_secteur}")
                 continue
-
-            # Ignorer les Communications
-            if "communication" in secteur.lower() or "communication" in sous_secteur.lower():
-                print(f"⏭Skip: {secteur} › {sous_secteur} (Communication)")
-                continue
-
-            # Ignorer les comptabilités
-            if "comptabilité" in secteur.lower() or "comptabilité" in sous_secteur.lower():
-                print(f"⏭Skip: {secteur} › {sous_secteur} (Comptabilité)")
-                continue
+                
             if len(all_prospects) >= limit:
                 break
             
-            secteur = subcat["secteur"]
-            sous_secteur = subcat["sous_secteur"]
             url = subcat["url"]
             
-            # Filtrer par catégorie si spécifiée
             if category and category.lower() not in secteur.lower() and category.lower() not in sous_secteur.lower():
                 continue
             
             print(f"  📂 {secteur} › {sous_secteur}")
             
-            page_num = 1
+            page_num = start_page  # ← Démarrer à la page demandée
             current_url = url
             
             while current_url and len(all_prospects) < limit:
                 print(f"    📄 Page {page_num}...", end=" ", flush=True)
-                time.sleep(1.5)  # Délai pour respecter le site
+                time.sleep(1.5)
                 
                 companies, next_url = self._scrape_listing_page(
                     current_url, secteur, sous_secteur
@@ -290,11 +244,9 @@ class ShowroomScraper:
                 
                 print(f"{len(companies)} entreprises")
                 
-                # Ajouter les entreprises
                 remaining = limit - len(all_prospects)
                 all_prospects.extend(companies[:remaining])
                 
-                # Pagination
                 if max_pages and page_num >= max_pages:
                     break
                 if not next_url or next_url == current_url:
@@ -303,11 +255,10 @@ class ShowroomScraper:
                 current_url = next_url
                 page_num += 1
         
-        print(f" Showroom Africa: {len(all_prospects)} prospects extraits")
+        print(f"✅ Showroom Africa: {len(all_prospects)} prospects extraits")
         return all_prospects
     
     def _get_all_subcategory_urls(self) -> List[Dict[str, str]]:
-        """Récupère toutes les sous-catégories"""
         soup = self._get_soup(f"{self.base_url}/categorie")
         if not soup:
             return []
@@ -330,20 +281,12 @@ class ShowroomScraper:
         
         return subcats
     
-    def _scrape_listing_page(
-        self,
-        url: str,
-        secteur: str,
-        sous_secteur: str
-    ) -> tuple[List[Dict[str, Any]], Optional[str]]:
-        """Scrape une page de liste"""
+    def _scrape_listing_page(self, url: str, secteur: str, sous_secteur: str) -> tuple:
         soup = self._get_soup(url)
         if not soup:
             return [], None
         
         companies = []
-        
-        # Trouver les cartes d'entreprises
         cards = self._find_company_cards(soup)
         seen = set()
         
@@ -359,7 +302,6 @@ class ShowroomScraper:
             seen.add(nom)
             data = self._parse_company_card(card, secteur, sous_secteur)
             if data.get("nom"):
-                # Transformer au format attendu par ton système
                 prospect = {
                     "name": data["nom"],
                     "phone": data["telephone"] or "À déterminer",
@@ -372,7 +314,6 @@ class ShowroomScraper:
                 }
                 companies.append(prospect)
         
-        # Pagination
         next_url = None
         next_link = soup.find("a", string=re.compile(r"suivant|next|›|»", re.I))
         if next_link and next_link.get("href"):
@@ -381,10 +322,8 @@ class ShowroomScraper:
         return companies, next_url
     
     def _find_company_cards(self, soup: BeautifulSoup) -> List:
-        """Trouve les cartes d'entreprises dans la page"""
         cards = []
         
-        # Méthode 1 : blocs section/article
         for tag in ["article", "section", "div"]:
             candidates = soup.find_all(tag)
             for c in candidates:
@@ -394,7 +333,6 @@ class ShowroomScraper:
             if cards:
                 break
         
-        # Méthode 2 (fallback)
         if not cards:
             for h3 in soup.select("h3 a[href]"):
                 parent = h3.find_parent(["article", "section", "div", "li"])
@@ -404,7 +342,6 @@ class ShowroomScraper:
         return cards
     
     def _parse_company_card(self, card, secteur: str, sous_secteur: str) -> Dict[str, Any]:
-        """Parse une carte d'entreprise"""
         nom = self._clean(card.select_one("h3 a").get_text()) if card.select_one("h3 a") else ""
         
         adresse = ""
@@ -421,7 +358,6 @@ class ShowroomScraper:
             elif text:
                 adresse = text
         
-        # Description
         desc_tag = card.select_one("p:not(:has(li))")
         if not desc_tag:
             for p in card.select("p"):
@@ -432,7 +368,6 @@ class ShowroomScraper:
         else:
             description = self._clean(desc_tag.get_text())
         
-        # Extraire la ville depuis l'adresse
         if "," in adresse:
             parts = adresse.rsplit(",", 1)
             adresse = self._clean(parts[0])
@@ -449,62 +384,73 @@ class ShowroomScraper:
         }
     
     def _get_soup(self, url: str) -> Optional[BeautifulSoup]:
-        """Télécharge une page et retourne le BeautifulSoup"""
         try:
             resp = self.session.get(url, timeout=15)
             resp.raise_for_status()
             return BeautifulSoup(resp.text, "html.parser")
         except requests.RequestException as e:
-            print(f"    ⚠️ Erreur: {e}")
+            print(f"⚠️ Erreur: {e}")
             return None
     
     def _clean(self, text: str) -> str:
-        """Nettoie le texte"""
         return re.sub(r"\s+", " ", text).strip() if text else ""
 
-# ==================== SERVICE UNIFIÉ ====================
 
+# ==================== SERVICE UNIFIÉ ====================
 class ScraperService:
-    """Service de scraping unifié"""
+    """Service de scraping unifié avec pagination intelligente"""
     
     def __init__(self):
         self.africa_scraper = AfricaOnlineScraper() 
         self.showroom_scraper = ShowroomScraper(country_code="bj")
-
-    def collect_prospects(self, source: str = "africa", **kwargs) -> List[Dict[str, Any]]:
-        """Collecte des prospects de'une source GoAfricaOnine pour une première version"""
+    
+    def collect_prospects(self, source: str = "africa", page: int = 1, **kwargs) -> List[Dict[str, Any]]:
+        """
+        Collecte des prospects avec pagination intelligente
+        
+        Args:
+            source: "africa", "showroom", ou "all"
+            page: Page de départ (pour continuer là où on s'était arrêté)
+            limit: Nombre maximum de prospects
+            max_pages: Nombre maximum de pages à scraper
+        """
         all_prospects = []
         
         limit = kwargs.get('limit', 20)
-        query = kwargs.get('query', 'entreprises Bénin')
         max_pages = kwargs.get('max_pages', 5)
+        query = kwargs.get('query', 'entreprises Bénin')
         category = kwargs.get('category')
         country = kwargs.get('country', 'bj')
         
-        if source in ["africa","all"]:
+        # Go Africa
+        if source in ["africa", "all"]:
             try:
-                print(f"Scraping Go Africa (max {max_pages} pages)...")
+                print(f"🔍 Scraping Go Africa (depuis page {page}, max {max_pages} pages)...")
                 africa_results = self.africa_scraper.search_businesses(
                     limit=limit,
+                    start_page=page,
                     max_pages=max_pages
                 )
                 all_prospects.extend(africa_results)
-                print(f"Go Africa: {len(africa_results)} prospects")
+                print(f"✅ Go Africa: {len(africa_results)} prospects")
             except Exception as e:
-                print(f" Erreur sur africa: {e}")
-    
-        if source in ["showroom","all"]:
+                print(f"❌ Erreur sur africa: {e}")
+        
+        # Showroom Africa
+        if source in ["showroom", "all"]:
             try:
-                # Créer un scraper pour le pays demandé
+                print(f"🔍 Scraping Showroom Africa ({country}) depuis page {page}...")
                 scraper = ShowroomScraper(country_code=country)
-                prospects = scraper.search_businesses(
+                results = scraper.search_businesses(
                     limit=limit,
+                    start_page=page,
                     max_pages=max_pages,
                     category=category
                 )
-                all_prospects.extend(prospects)
-                print(f"Showroom Africa ({country}): {len(prospects)} prospects")
+                all_prospects.extend(results)
+                print(f"✅ Showroom Africa: {len(results)} prospects")
             except Exception as e:
-                print(f"Erreur Showroom: {e}")
-        print(f"TOTAL: {len(all_prospects)} prospects collectés")
+                print(f"❌ Erreur Showroom: {e}")
+        
+        print(f"📊 TOTAL: {len(all_prospects)} prospects collectés")
         return all_prospects

@@ -18,7 +18,7 @@ from app.services.scraper import ScraperService
 from app.services.normaliseur import DataNormaliseur
 from app.services.ai import AIService
 from app.services.verify_number import PhoneVerifier
-from app.services.service_sms import SmsService  # ← AJOUT
+from app.services.service_sms import SmsService  
 from app.schemas.prospects import (
     ProspectResponse, 
     CollectResponse, 
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 scraper_service = ScraperService()
 ai_service = AIService()
 phone_verifier = PhoneVerifier()
-sms_service = SmsService()  # ← AJOUT
+sms_service = SmsService() 
 
 
 # ============ ROUTE 1: COLLECT ============
@@ -47,20 +47,27 @@ async def collect_prospects(
     background_tasks: BackgroundTasks,
     source: str = "all",
     limit: int = 15,
+    page: int = 1,
     max_pages: int = 300,
     query: str = "entreprises Benin",
     db: Session = Depends(get_db)
 ):
-    """
-    Lance la collecte de prospects
-    """
     try:
-        print(f"\n COLLECT: source={source}, limit={limit}")
+        print(f"\n🔵 COLLECT: source={source}, limit={limit}, page={page}")
         
+        # ✅ 1. Définir repo tout de suite
+        repo = ProspectRepository(db)
+        
+        # ✅ 2. Récupérer la dernière page
+        last_page = repo.get_last_page(source) or 1
+        print(f"📄 Dernière page connue: {last_page}")
+        
+        # ✅ 3. Collecte
         raw_prospects = scraper_service.collect_prospects(
             source=source,
             limit=limit,
             max_pages=max_pages,
+            page=last_page,  # ← Utiliser last_page
             query=query
         )
         
@@ -73,7 +80,7 @@ async def collect_prospects(
                 errors=["Aucun prospect trouvé"]
             )
         
-        repo = ProspectRepository(db)
+        # ✅ 4. Traitement des prospects
         new_prospects = []
         duplicates = []
         errors = []
@@ -81,20 +88,24 @@ async def collect_prospects(
         for raw_data in raw_prospects:
             try:
                 normalized = DataNormaliseur.normalize_prospect(raw_data)
-                print(f"Normalisé: {normalized.name} - {normalized.phone}")
+                print(f"📝 Normalisé: {normalized.name} - {normalized.phone}")
                 
                 if DataNormaliseur.validate_prospect(normalized):
                     if not repo.check_duplicate(normalized.phone):
                         prospect = repo.create(normalized)
+                        
                         if prospect:
                             new_prospects.append(prospect)
-                            print(f" AJOUTÉ: {prospect.name} (ID: {prospect.id})")
+                            print(f"✅ AJOUTÉ: {prospect.name} (ID: {prospect.id})")
                             
-                            background_tasks.add_task(
-                                ai_service.analyze_and_update_prospect,
-                                prospect.id,
-                                db
-                            )
+                            if not prospect.is_processed:
+                                background_tasks.add_task(
+                                    ai_service.analyze_and_update_prospect,
+                                    prospect.id,
+                                    db
+                                )
+                            else:
+                                print(f"⏭️ {prospect.name} déjà analysé, ignoré.")
                         else:
                             errors.append(f"Erreur création: {normalized.name}")
                     else:
@@ -102,16 +113,23 @@ async def collect_prospects(
                             "name": normalized.name,
                             "phone": normalized.phone
                         })
-                        print(f" DOUBLON: {normalized.phone}")
+                        print(f"⚠️ DOUBLON: {normalized.phone}")
                 else:
                     errors.append(f"Validation échouée: {normalized.name}")
                     
             except Exception as e:
-                logger.error(f" Erreur traitement: {e}")
+                logger.error(f"❌ Erreur traitement: {e}")
                 errors.append(str(e))
                 continue
         
-        print(f"RÉSULTAT: {len(new_prospects)} nouveaux, {len(duplicates)} doublons, {len(errors)} erreurs")
+        # ✅ 5. Mettre à jour la page
+        # Estimer la nouvelle page (environ 30 entreprises par page)
+        pages_used = (len(raw_prospects) // 30) + 1
+        new_page = last_page + pages_used
+        repo.update_last_page(source, new_page)
+        
+        print(f"📊 RÉSULTAT: {len(new_prospects)} nouveaux, {len(duplicates)} doublons, {len(errors)} erreurs")
+        print(f"📄 Prochaine page: {new_page + 1}")
         
         return CollectResponse(
             total_extracted=len(raw_prospects),
@@ -122,7 +140,7 @@ async def collect_prospects(
         )
         
     except Exception as e:
-        logger.error(f" ERREUR COLLECT: {e}")
+        logger.error(f"❌ ERREUR COLLECT: {e}")
         return CollectResponse(
             status="error",
             total_extracted=0,
@@ -130,8 +148,6 @@ async def collect_prospects(
             duplicates=0,
             errors=[str(e)]
         )
-
-
 # ============ ROUTE 2: PROCESS-FULL ============
 @router.post("/process-full")
 async def process_full_pipeline(
@@ -139,13 +155,10 @@ async def process_full_pipeline(
     db: Session = Depends(get_db)
 ):
     """
-    Pipeline complet :
-    1. Analyse IA de tous les prospects
-    2. Envoi SMS avec lien ISHOWO
-    (exécuté en arrière-plan)
+    Pipeline complet : analyse IA uniquement
     """
     repo = ProspectRepository(db)
-    all_prospects = repo.get_all(skip=0, limit=1000)
+    all_prospects = repo.get_all_unprocessed()
 
     if not all_prospects:
         return {
@@ -155,21 +168,16 @@ async def process_full_pipeline(
         }
 
     prospect_ids = [p.id for p in all_prospects]
-
     background_tasks.add_task(process_full_pipeline_task, prospect_ids)
 
     return {
         "status": "processing",
         "total": len(prospect_ids),
-        "message": f"Pipeline complet démarré pour {len(prospect_ids)} prospects"
+        "message": f"Pipeline démarré pour {len(prospect_ids)} prospects"
     }
 
 
 def process_one(pid: int) -> dict:
-    """
-    Traite un seul prospect (exécuté dans un thread du pool).
-    Crée SA PROPRE session DB.
-    """
     db = SessionLocal()
     try:
         repo = ProspectRepository(db)
@@ -177,7 +185,7 @@ def process_one(pid: int) -> dict:
         if not prospect:
             return {"pid": pid, "status": "not_found"}
 
-        logger.info(f" Traitement: {prospect.name}")
+        logger.info(f"🔍 Traitement: {prospect.name}")
 
         # 1. Analyse IA
         try:
@@ -198,7 +206,7 @@ def process_one(pid: int) -> dict:
                 'is_processed': True
             })
 
-            logger.info(f" IA: {prospect.name} -> {analysis['business_type']} (score: {analysis['score']})")
+            logger.info(f"IA: {prospect.name} -> {analysis['business_type']} (score: {analysis['score']})")
 
         except Exception as e:
             logger.error(f" IA erreur {prospect.name}: {e}")
@@ -206,31 +214,6 @@ def process_one(pid: int) -> dict:
                 'is_processed': True,
                 'ai_justification': f"Erreur: {str(e)[:100]}"
             })
-
-        # 2. Envoi SMS avec lien ISHOWO
-        if prospect.phone:
-            try:
-                result = sms_service.send_ishowo_link(prospect.phone)
-                
-                repo.update(pid, {
-                    'phone_validation': json.dumps(result)
-                })
-                
-                if result.get("valid"):
-                    logger.info(f" SMS envoyé à {prospect.name}")
-                else:
-                    logger.warning(f" SMS non envoyé à {prospect.name}: {result.get('message')}")
-                    
-            except Exception as e:
-                logger.error(f"SMS erreur {prospect.name}: {e}")
-                repo.update(pid, {
-                    'phone_validation': json.dumps({
-                        "valid": False,
-                        "status": "error",
-                        "message": f"Erreur SMS: {str(e)[:100]}",
-                        "checked_at": datetime.utcnow().isoformat()
-                    })
-                })
 
         return {"pid": pid, "status": "done"}
 
@@ -244,7 +227,7 @@ def process_one(pid: int) -> dict:
 
 def process_full_pipeline_task(prospect_ids: List[int]):
     """Pipeline complet en arrière-plan"""
-    logger.info(f"Lancement du traitement parallèle de {len(prospect_ids)} prospects...")
+    logger.info(f"Lancement du traitement de {len(prospect_ids)} prospects...")
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(process_one, pid): pid for pid in prospect_ids}
@@ -255,19 +238,18 @@ def process_full_pipeline_task(prospect_ids: List[int]):
                 result = future.result(timeout=60)
                 logger.info(f"Prospect {pid} terminé: {result.get('status')}")
             except Exception as e:
-                logger.error(f" Prospect {pid} a échoué: {e}")
+                logger.error(f"Prospect {pid} a échoué: {e}")
 
-    logger.info(f" Traitement parallèle terminé pour {len(prospect_ids)} prospects")
+    logger.info(f" Traitement terminé pour {len(prospect_ids)} prospects")
 
-
-# ============ ROUTE 3: VÉRIFICATION SMS (SPÉCIFIQUE) ============
-@router.post("/verify-sms/{prospect_id}")
-async def verify_prospect_by_sms(
+# ============ ROUTE : VÉRIFICATION PAR APPEL (SPÉCIFIQUE) ============
+@router.post("/verify-call/{prospect_id}")
+async def verify_prospect_by_call(
     prospect_id: int,
     db: Session = Depends(get_db)
 ):
     """
-    Vérifie un prospect en envoyant un SMS avec le lien ISHOWO
+    Vérifie un prospect en lançant un appel vocal
     """
     repo = ProspectRepository(db)
     prospect = repo.get_by_id(prospect_id)
@@ -275,8 +257,8 @@ async def verify_prospect_by_sms(
     if not prospect:
         raise HTTPException(status_code=404, detail="Prospect non trouvé")
     
-    # Envoyer le SMS
-    result = sms_service.send_ishowo_link(prospect.phone)
+    # Lancer l'appel
+    result = phone_verifier.trigger_call(prospect.phone)
     
     # Mettre à jour le prospect
     repo.update(prospect_id, {
@@ -287,72 +269,48 @@ async def verify_prospect_by_sms(
         "prospect_id": prospect_id,
         "prospect_name": prospect.name,
         "phone": prospect.phone,
-        "sms_sent": result.get("valid", False),
+        "call_sent": result.get("success", False),
         "message": result.get("message"),
         "checked_at": result.get("checked_at")
     }
 
-
-# ============ ROUTE 4: VÉRIFICATION SMS EN LOT ============
-@router.post("/verify-all-sms")
-async def verify_all_by_sms(
-    background_tasks: BackgroundTasks,
+# ============ ROUTE : VÉRIFICATION UNIFIÉE (SMS + APPEL) ============
+@router.post("/verify/{prospect_id}")
+async def verify_prospect(
+    prospect_id: int,
+    method: str = "sms",  # "sms" ou "call"
     db: Session = Depends(get_db)
 ):
     """
-    Envoie un SMS à TOUS les prospects non vérifiés
+    Vérifie un prospect par SMS ou appel vocal
+    - method: "sms" ou "call"
     """
     repo = ProspectRepository(db)
-    prospects = repo.get_all_unverified()
+    prospect = repo.get_by_id(prospect_id)
     
-    if not prospects:
-        return {
-            "status": "no_prospects",
-            "message": "Aucun prospect à vérifier",
-            "total": 0
-        }
+    if not prospect:
+        raise HTTPException(status_code=404, detail="Prospect non trouvé")
     
-    background_tasks.add_task(send_sms_batch_task, [p.id for p in prospects], db)
+    if method == "sms":
+        result = sms_service.send_ishowo_link(prospect.phone)
+    elif method == "call":
+        result = phone_verifier.trigger_call(prospect.phone)
+    else:
+        raise HTTPException(status_code=400, detail="Méthode invalide. Utilise 'sms' ou 'call'")
+    
+    repo.update(prospect_id, {
+        'phone_validation': json.dumps(result)
+    })
     
     return {
-        "status": "processing",
-        "total": len(prospects),
-        "message": f"Envoi de SMS à {len(prospects)} prospects en cours"
+        "prospect_id": prospect_id,
+        "prospect_name": prospect.name,
+        "phone": prospect.phone,
+        "method": method,
+        "valid": result.get("valid", result.get("success", False)),
+        "message": result.get("message"),
+        "checked_at": result.get("checked_at")
     }
-
-
-def send_sms_batch_task(prospect_ids: List[int], db: Session):
-    """
-    Tâche d'envoi de SMS en arrière-plan
-    """
-    repo = ProspectRepository(db)
-    
-    for i, pid in enumerate(prospect_ids):
-        prospect = repo.get_by_id(pid)
-        if not prospect:
-            continue
-        
-        try:
-            print(f" [{i+1}/{len(prospect_ids)}] Envoi à {prospect.phone}")
-            result = sms_service.send_ishowo_link(prospect.phone)
-            
-            repo.update(pid, {
-                'phone_validation': json.dumps(result)
-            })
-            
-            print(f"   {'✅' if result.get('valid') else '❌'} {result.get('message')}")
-            
-        except Exception as e:
-            print(f"Erreur pour {prospect.name}: {e}")
-            repo.update(pid, {
-                'phone_validation': json.dumps({
-                    "valid": False,
-                    "status": "error",
-                    "message": f"Erreur: {str(e)[:100]}",
-                    "checked_at": datetime.utcnow().isoformat()
-                })
-            })
-
 
 # ============ ROUTE 5: PROSPECTS (AFFICHAGE JSON) ============
 @router.get("/prospects")
@@ -550,7 +508,7 @@ async def test_insert(db: Session = Depends(get_db)):
         
         test = ProspectCreate(
             name="ENTREPRISE TEST",
-            phone=normalize("+229 01 12 34 56 78"),
+            phone=normalize("+229 01 47 86 32 52"),
             sector="Test",
             city="Cotonou",
             description="Description test",
@@ -590,7 +548,6 @@ async def root():
         "endpoints": {
             "collect": "POST /collect - Collecte des prospects",
             "process-full": "POST /process-full - Pipeline complet (IA + SMS)",
-            "verify-sms": "POST /verify-sms/{id} - Envoi SMS à un prospect",
             "verify-all-sms": "POST /verify-all-sms - Envoi SMS à tous",
             "prospects": "GET /prospects - Liste des prospects",
             "prospects/export/json": "GET /prospects/export/json - Export JSON",
