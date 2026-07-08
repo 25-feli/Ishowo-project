@@ -47,27 +47,33 @@ async def collect_prospects(
     background_tasks: BackgroundTasks,
     source: str = "all",
     limit: int = 15,
-    page: int = 1,
     max_pages: int = 300,
     query: str = "entreprises Benin",
     db: Session = Depends(get_db)
 ):
     try:
-        print(f"\n🔵 COLLECT: source={source}, limit={limit}, page={page}")
-        
-        # ✅ 1. Définir repo tout de suite
         repo = ProspectRepository(db)
         
-        # ✅ 2. Récupérer la dernière page
-        last_page = repo.get_last_page(source) or 1
-        print(f"📄 Dernière page connue: {last_page}")
+        # 1. Vérifier si la base est vide
+        total_prospects = repo.count_all()
         
-        # ✅ 3. Collecte
+        # 2. Déterminer la page de départ
+        if total_prospects == 0:
+            page = 1
+            print(f"\n Base vide → Démarrage à la page 1")
+        else:
+            # Récupérer la dernière page depuis le fichier JSON
+            page = repo.get_last_page(source) or 1
+            print(f"\n Base non vide → Continuation à la page {page}")
+        
+        print(f" COLLECT: source={source}, limit={limit}, page={page}")
+        
+        # 3. Collecte
         raw_prospects = scraper_service.collect_prospects(
             source=source,
             limit=limit,
             max_pages=max_pages,
-            page=last_page,  # ← Utiliser last_page
+            page=page,
             query=query
         )
         
@@ -80,7 +86,7 @@ async def collect_prospects(
                 errors=["Aucun prospect trouvé"]
             )
         
-        # ✅ 4. Traitement des prospects
+        # 4. Traitement des prospects
         new_prospects = []
         duplicates = []
         errors = []
@@ -88,7 +94,7 @@ async def collect_prospects(
         for raw_data in raw_prospects:
             try:
                 normalized = DataNormaliseur.normalize_prospect(raw_data)
-                print(f"📝 Normalisé: {normalized.name} - {normalized.phone}")
+                print(f"Normalisé: {normalized.name} - {normalized.phone}")
                 
                 if DataNormaliseur.validate_prospect(normalized):
                     if not repo.check_duplicate(normalized.phone):
@@ -96,7 +102,7 @@ async def collect_prospects(
                         
                         if prospect:
                             new_prospects.append(prospect)
-                            print(f"✅ AJOUTÉ: {prospect.name} (ID: {prospect.id})")
+                            print(f" AJOUTÉ: {prospect.name} (ID: {prospect.id})")
                             
                             if not prospect.is_processed:
                                 background_tasks.add_task(
@@ -105,7 +111,7 @@ async def collect_prospects(
                                     db
                                 )
                             else:
-                                print(f"⏭️ {prospect.name} déjà analysé, ignoré.")
+                                print(f" {prospect.name} déjà analysé, ignoré.")
                         else:
                             errors.append(f"Erreur création: {normalized.name}")
                     else:
@@ -113,23 +119,24 @@ async def collect_prospects(
                             "name": normalized.name,
                             "phone": normalized.phone
                         })
-                        print(f"⚠️ DOUBLON: {normalized.phone}")
+                        print(f" DOUBLON: {normalized.phone}")
                 else:
                     errors.append(f"Validation échouée: {normalized.name}")
                     
             except Exception as e:
-                logger.error(f"❌ Erreur traitement: {e}")
+                logger.error(f"Erreur traitement: {e}")
                 errors.append(str(e))
                 continue
         
-        # ✅ 5. Mettre à jour la page
-        # Estimer la nouvelle page (environ 30 entreprises par page)
-        pages_used = (len(raw_prospects) // 30) + 1
-        new_page = last_page + pages_used
-        repo.update_last_page(source, new_page)
+        # 5. Mettre à jour la page (si des prospects ont été collectés)
+        if raw_prospects:
+            new_page = page + (len(raw_prospects) // 30) + 1
+            repo.update_last_page(source, new_page)
+            print(f"📄 Prochaine page: {new_page}")
+        else:
+            print(f"📭 Aucun prospect collecté, page inchangée")
         
         print(f"📊 RÉSULTAT: {len(new_prospects)} nouveaux, {len(duplicates)} doublons, {len(errors)} erreurs")
-        print(f"📄 Prochaine page: {new_page + 1}")
         
         return CollectResponse(
             total_extracted=len(raw_prospects),
@@ -140,7 +147,7 @@ async def collect_prospects(
         )
         
     except Exception as e:
-        logger.error(f"❌ ERREUR COLLECT: {e}")
+        logger.error(f" ERREUR COLLECT: {e}")
         return CollectResponse(
             status="error",
             total_extracted=0,
@@ -148,17 +155,21 @@ async def collect_prospects(
             duplicates=0,
             errors=[str(e)]
         )
-# ============ ROUTE 2: PROCESS-FULL ============
+# ============ ROUTE 2: PROCESS-FULL (IA + SMS + APPEL) ============
 @router.post("/process-full")
 async def process_full_pipeline(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
-    Pipeline complet : analyse IA uniquement
+    Pipeline complet :
+    1. Analyse IA de tous les prospects
+    2. Vérification par SMS
+    3. Vérification par appel (si SMS échoue)
+    Logique OU : joignable si SMS ou Appel fonctionne
     """
     repo = ProspectRepository(db)
-    all_prospects = repo.get_all_unprocessed()
+    all_prospects = repo.get_all(skip=0, limit=1000)
 
     if not all_prospects:
         return {
@@ -178,6 +189,9 @@ async def process_full_pipeline(
 
 
 def process_one(pid: int) -> dict:
+    """
+    Traite un seul prospect avec IA + SMS + Appel (logique OU)
+    """
     db = SessionLocal()
     try:
         repo = ProspectRepository(db)
@@ -185,7 +199,7 @@ def process_one(pid: int) -> dict:
         if not prospect:
             return {"pid": pid, "status": "not_found"}
 
-        logger.info(f"🔍 Traitement: {prospect.name}")
+        logger.info(f"Traitement: {prospect.name}")
 
         # 1. Analyse IA
         try:
@@ -209,11 +223,61 @@ def process_one(pid: int) -> dict:
             logger.info(f"IA: {prospect.name} -> {analysis['business_type']} (score: {analysis['score']})")
 
         except Exception as e:
-            logger.error(f" IA erreur {prospect.name}: {e}")
+            logger.error(f"IA erreur {prospect.name}: {e}")
             repo.update(pid, {
                 'is_processed': True,
                 'ai_justification': f"Erreur: {str(e)[:100]}"
             })
+
+        # 2. VÉRIFICATION (SMS + Appel) - Logique OU
+        sms_valid = False
+        call_valid = False
+        sms_result = None
+        call_result = None
+        
+        if prospect.phone:
+            # 2.1 Tentative SMS
+            try:
+                sms_result = sms_service.send_ishowo_link(prospect.phone)
+                sms_valid = sms_result.get('valid', False)
+                logger.info(f"📱 SMS: {prospect.name} -> {'OK' if sms_valid else 'ÉCHEC'}")
+            except Exception as e:
+                logger.error(f"SMS erreur {prospect.name}: {e}")
+                sms_result = {"valid": False, "error": str(e)}
+            
+            # 2.2 Tentative Appel (si SMS échoue ou toujours)
+            # On tente l'appel dans tous les cas pour avoir une double vérification
+            try:
+                call_result = phone_verifier.trigger_call(prospect.phone)
+                call_valid = call_result.get('success', False)
+                logger.info(f" Appel: {prospect.name} -> {' OK' if call_valid else 'ÉCHEC'}")
+            except Exception as e:
+                logger.error(f"Appel erreur {prospect.name}: {e}")
+                call_result = {"success": False, "error": str(e)}
+            
+            # 2.3 Logique OU : joignable si SMS OU Appel OK
+            is_joignable = sms_valid or call_valid
+            
+            # 2.4 Synthèse
+            verification_result = {
+                "valid": is_joignable,
+                "sms": {
+                    "valid": sms_valid,
+                    "details": sms_result
+                },
+                "call": {
+                    "valid": call_valid,
+                    "details": call_result
+                },
+                "method": "sms_or_call",
+                "checked_at": datetime.utcnow().isoformat()
+            }
+            
+            repo.update(pid, {
+                'phone_validation': json.dumps(verification_result)
+            })
+            
+            logger.info(f"JOIGNABLE: {prospect.name} -> {'OUI' if is_joignable else ' NON'} (SMS: {sms_valid}, Appel: {call_valid})")
 
         return {"pid": pid, "status": "done"}
 
@@ -226,8 +290,8 @@ def process_one(pid: int) -> dict:
 
 
 def process_full_pipeline_task(prospect_ids: List[int]):
-    """Pipeline complet en arrière-plan"""
-    logger.info(f"Lancement du traitement de {len(prospect_ids)} prospects...")
+    """Pipeline complet en arrière-plan (IA + SMS + Appel)"""
+    logger.info(f" Lancement du pipeline complet pour {len(prospect_ids)} prospects...")
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(process_one, pid): pid for pid in prospect_ids}
@@ -235,12 +299,12 @@ def process_full_pipeline_task(prospect_ids: List[int]):
         for future in as_completed(futures):
             pid = futures[future]
             try:
-                result = future.result(timeout=60)
-                logger.info(f"Prospect {pid} terminé: {result.get('status')}")
+                result = future.result(timeout=120)  # Timeout plus long pour les appels
+                logger.info(f"✅ Prospect {pid} terminé: {result.get('status')}")
             except Exception as e:
-                logger.error(f"Prospect {pid} a échoué: {e}")
+                logger.error(f" Prospect {pid} a échoué: {e}")
 
-    logger.info(f" Traitement terminé pour {len(prospect_ids)} prospects")
+    logger.info(f"Pipeline complet terminé pour {len(prospect_ids)} prospects")
 
 # ============ ROUTE : VÉRIFICATION PAR APPEL (SPÉCIFIQUE) ============
 @router.post("/verify-call/{prospect_id}")
@@ -371,6 +435,96 @@ async def get_prospects_json_direct(
         "prospects": results
     }
 
+# ============ ROUTE : EXPORT PROSPECTS EXPLOITABLES ============
+@router.get("/prospects/export/exploitable/csv")
+async def export_exploitable_csv(db: Session = Depends(get_db)):
+    """
+    Télécharge uniquement les prospects exploitables au format CSV
+    Critères : score > 5 ET joignables (phone_validation.valid = True)
+    """
+    import csv
+    from io import StringIO
+    from fastapi import Response
+    
+    repo = ProspectRepository(db)
+    all_prospects = repo.get_all(skip=0, limit=10000, sort_by_score=True)
+    
+    # Filtrer les prospects exploitables
+    exploitable = []
+    for p in all_prospects:
+        phone_validation = None
+        if p.phone_validation:
+            try:
+                phone_validation = json.loads(p.phone_validation)
+            except:
+                pass
+        
+        # Critères : score > 5 ET joignable
+        if p.score and p.score > 5 and phone_validation and phone_validation.get('valid', False):
+            exploitable.append({
+                "prospect": p,
+                "validation": phone_validation
+            })
+    
+    if not exploitable:
+        # Retourner un CSV vide avec un message
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Message'])
+        writer.writerow(['Aucun prospect exploitable trouvé'])
+        csv_data = output.getvalue()
+        output.close()
+        return Response(
+            content=csv_data,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=aucun_exploitable.csv"
+            }
+        )
+    
+    # Créer le CSV
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # En-têtes
+    writer.writerow([
+        'ID', 'Nom', 'Téléphone', 'Secteur', 'Ville',
+        'Adresse', 'Type Business', 'Score', 'Besoin Stock',
+        'Joignable', 'Opérateur', 'Justification IA'
+    ])
+    
+    # Données
+    for item in exploitable:
+        p = item["prospect"]
+        validation = item["validation"]
+        
+        writer.writerow([
+            p.id,
+            p.name,
+            p.phone,
+            p.sector or '',
+            p.city or '',
+            p.address or '',
+            p.business_type or '',
+            p.score or 0,
+            'Oui' if p.stock_management_need else 'Non',
+            'Oui' if validation.get('valid') else 'Non',
+            validation.get('carrier', '') or validation.get('sms', {}).get('carrier', ''),
+            p.ai_justification or ''
+        ])
+    
+    csv_data = output.getvalue()
+    output.close()
+    
+    filename = f"prospects_exploitables_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )
 
 # ============ ROUTE 6: PROSPECTS (EXPORT JSON) ============
 @router.get("/prospects/export/json")

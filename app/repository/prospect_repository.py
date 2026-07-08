@@ -82,6 +82,9 @@ class ProspectRepository:
                 return None
         return None
     
+    def count_all(self) -> int:
+        """Compte tous les prospects en base"""
+        return self.db.query(Prospect).count()
 
     def get_last_page(self, source: str) -> int:
         """Récupère la dernière page scrappée depuis un fichier JSON"""

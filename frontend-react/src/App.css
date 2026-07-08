@@ -311,3 +311,36 @@ footer {
     animation: spin 1s linear infinite;
     margin-right: 15px;
 }
+
+/* Box cliquable */
+.stat-box.clickable {
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.stat-box.clickable:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.stat-box.clickable:hover::after {
+    content: "📥 Cliquez pour exporter";
+    position: absolute;
+    bottom: 5px;
+    right: 10px;
+    font-size: 10px;
+    color: #888;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.stat-box.clickable:hover::after {
+    opacity: 1;
+}
+
+.stat-box .sub-label {
+    font-size: 11px;
+    color: #999;
+    margin-top: 2px;
+}

@@ -15,7 +15,8 @@ class SmsService:
         self.sender = os.getenv("OURVOICE_SENDER", "IWAJU TECH")
         
         # 🔥 MODE TEST : Activer pour les tests
-        self.test_mode = os.getenv("SMS_TEST_MODE", "true").lower() == "true"
+        self.test_mode = os.getenv("SMS_TEST_MODE", "true" \
+        "").lower() == "true"
         
         if self.test_mode:
             print("🔬 MODE TEST SMS ACTIF - Aucun vrai SMS envoyé")

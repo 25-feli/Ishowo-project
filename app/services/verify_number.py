@@ -15,7 +15,7 @@ class PhoneVerifier:
         self.caller_id = os.getenv("OURVOICE_CALLER_ID", "2290166477424")
         self.webhook_url = os.getenv("OURVOICE_WEBHOOK_URL", "https://ishowo-prospect.com/webhook/ourvoice")
         self.pending_requests = {}
-        self.audio_url = os.getenv("OURVOICE_AUDIO_URL", "https://www.textavoice.com/tts-audio(1).mp3")
+        self.audio_url = os.getenv("OURVOICE_AUDIO_URL", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3")
         
         if not self.api_key:
             print(" OURVOICE_API_KEY non définie")
@@ -39,7 +39,7 @@ class PhoneVerifier:
             "from": self.caller_id,
             "to": [cleaned_phone],
             "timeout": 15,
-            "play_audio": True,
+            "play_audio": False,
             "audio_url": self.audio_url, 
             "callback_url": f"{self.webhook_url}?request_id={request_id}",
             "max_attempts": 1
